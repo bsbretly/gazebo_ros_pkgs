@@ -16,14 +16,14 @@
 */
 
 /*
-   Desc: GazeboVacuumGripper plugin for manipulating objects in Gazebo
+   Desc: GazeboVacquumGripper plugin for manipulating objects in Gazebo
    Author: Kentaro Wada
    Date: 7 Dec 2015
  */
 
 #include <algorithm>
 #include <assert.h>
-
+// #include <math/gzmath.hh>
 #include <std_msgs/Bool.h>
 #include <gazebo_plugins/gazebo_ros_vacuum_gripper.h>
 #ifdef ENABLE_PROFILER
@@ -39,7 +39,9 @@ GZ_REGISTER_MODEL_PLUGIN(GazeboRosVacuumGripper);
 GazeboRosVacuumGripper::GazeboRosVacuumGripper()
 {
   connect_count_ = 0;
-  status_ = false;
+  status_ = true;
+  contact_duration = 10; //in sec
+  contact_done = false;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -208,35 +210,40 @@ void GazeboRosVacuumGripper::UpdateChild()
     }
     physics::Link_V links = models[i]->GetLinks();
     for (size_t j = 0; j < links.size(); j++) {
+      if(links[j]->GetName() != "wall")
+        continue;
 #if GAZEBO_MAJOR_VERSION >= 8
       ignition::math::Pose3d link_pose = links[j]->WorldPose();
 #else
       ignition::math::Pose3d link_pose = links[j]->GetWorldPose().Ign();
 #endif
-      ignition::math::Pose3d diff = parent_pose - link_pose;
-      double norm = diff.Pos().Length();
-      if (norm < 0.05) {
+      auto wall_x =  link_pose.X();
+      auto quad_tip_x = parent_pose.X();
+      double norm = std::abs(wall_x - quad_tip_x);
+      // std::cout << links[j]->GetName() <<  norm << std::endl;
+      // std::cout << link_->WorldPose() <<  std::endl << link_ ->RelativePose() << std::endl;
+      if (norm < 0.4) {
+        
 #if GAZEBO_MAJOR_VERSION >= 8
-        links[j]->SetLinearVel(link_->WorldLinearVel());
-        links[j]->SetAngularVel(link_->WorldAngularVel());
+        link_->SetLinearVel(ignition::math::Vector3d(0, 0, 0));
+        link_->SetAngularVel(ignition::math::Vector3d(0, 0, 0));
 #else
         links[j]->SetLinearVel(link_->GetWorldLinearVel());
         links[j]->SetAngularVel(link_->GetWorldAngularVel());
 #endif
-        double norm_force = 1 / norm;
-        if (norm < 0.01) {
-          // apply friction like force
-          // TODO(unknown): should apply friction actually
-          link_pose.Set(parent_pose.Pos(), link_pose.Rot());
-          links[j]->SetWorldPose(link_pose);
-        }
-        if (norm_force > 20) {
-          norm_force = 20;  // max_force
-        }
-        ignition::math::Vector3d force = norm_force * diff.Pos().Normalize();
-        links[j]->AddForce(force);
+   
         grasping_msg.data = true;
       }
+    }
+  }
+  if (grasping_msg.data && !contact_done){
+    contact_done = true;
+    first_contact = ros::Time::now();
+  } 
+  if (contact_done){
+    auto current_contact_duration = (ros::Time::now() - first_contact).toSec();
+    if (current_contact_duration >= contact_duration){
+      status_ = false;
     }
   }
 #ifdef ENABLE_PROFILER

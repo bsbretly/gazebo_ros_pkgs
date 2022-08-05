@@ -116,6 +116,10 @@ class GazeboRosVacuumGripper : public ModelPlugin
 
   private: bool status_;
 
+  private: double contact_duration;
+  private: ros::Time first_contact;
+  private: bool contact_done;
+
   private: physics::ModelPtr parent_;
 
   /// \brief A pointer to the gazebo world.
